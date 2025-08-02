@@ -8,11 +8,9 @@ from langchain.chains import RetrievalQA
 from langchain_community.chat_models import ChatOpenAI
 
 # Load OpenAI key from .env file or environment
-load_dotenv()
-openai_api_key = os.getenv("OPENAI_API_KEY")
+import streamlit as st
 
-if not openai_api_key:
-    raise ValueError("❌ You must set your OpenAI API key in a .env file or environment variable.")
+openai_api_key = st.secrets["OPENAI_API_KEY"]
 
 # === Load Q&A Pairs ===
 qa_docs = []
