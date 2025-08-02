@@ -1,7 +1,6 @@
 *.sql
 *.jsonl
 *.csv
-*.faiss
 __pycache__/
 .venv/
 .env
