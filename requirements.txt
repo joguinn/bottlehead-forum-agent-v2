@@ -1,1 +1,7 @@
-No idea.
+streamlit
+pandas
+openai
+langchain
+langchain-community
+faiss-cpu
+tiktokenNo idea.
