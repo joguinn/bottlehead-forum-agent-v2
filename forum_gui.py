@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from forum_agent import build_forum_agent, ask_forum_agent
+from forum_agent import forum_agent, ask_forum_agent
 
 # URL to your hosted CSV (must end in &raw=1)
 CSV_URL = "https://www.dropbox.com/scl/fi/e5v4hxp68apt7n13hits6/bottlehead_qna.csv?rlkey=ly6wrdcyobqqj4ug2gr9cin61&raw=1"
