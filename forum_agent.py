@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 from langchain_community.chat_models import ChatOpenAI
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import OpenAIEmbeddings
