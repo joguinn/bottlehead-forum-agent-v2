@@ -1,121 +1,61 @@
-import os
-import json
-from dotenv import load_dotenv
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain_core.documents import Document
-from langchain.chains import RetrievalQA
-from langchain_community.chat_models import ChatOpenAI
-
-# Load OpenAI key from .env file or environment
 import streamlit as st
+from langchain_community.chat_models import ChatOpenAI
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.chains import RetrievalQA
+from langchain_core.documents import Document
 
+# Get OpenAI API key from Streamlit secrets
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 
-# === Load Q&A Pairs ===
-qa_docs = []
+# Set up LLM and embeddings
+llm = ChatOpenAI(openai_api_key=openai_api_key, temperature=0)
+embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
 
-with open("bottlehead_qna.jsonl", "r") as f:
-    for line in f:
-        entry = json.loads(line)
-        content = f"Q: {entry['question']}\nA: {entry['answer']}"
-        metadata = {
-            "product": entry["product"],
-            "topic_id": entry["topic_id"],
-            "url": entry["url"]
-        }
-        qa_docs.append(Document(page_content=content, metadata=metadata))
+# Split text into chunks
+splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
 
-# === Create Vector Index ===
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+def build_forum_agent(df):
+    """Create a retriever from a CSV-loaded DataFrame with 'question', 'answer', and optional 'product' columns."""
 
-print("🔍 Splitting and embedding documents...")
+    # Ensure required columns
+    if "question" not in df.columns or "answer" not in df.columns:
+        raise ValueError("DataFrame must contain 'question' and 'answer' columns.")
 
-# Split long Q&A entries into smaller chunks
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
-    chunk_overlap=100
-)
+    docs = []
+    for i, row in df.iterrows():
+        q = str(row["question"]).strip()
+        a = str(row["answer"]).strip()
+        metadata = {}
 
-chunked_docs = splitter.split_documents(qa_docs)
+        # Optional product filter
+        if "product" in df.columns and pd.notna(row["product"]):
+            metadata["product"] = row["product"].strip()
 
-embeddings = OpenAIEmbeddings(api_key=openai_api_key)
-db = FAISS.from_documents(chunked_docs, embeddings)
-retriever = db.as_retriever()
+        content = f"Q: {q}\nA: {a}"
+        docs.append(Document(page_content=content, metadata=metadata))
 
-# === Build the QA Agent ===
-qa = RetrievalQA.from_chain_type(
-    llm=ChatOpenAI(api_key=openai_api_key, temperature=0),
-    retriever=retriever,
-    return_source_documents=True
-)
+    # Split long docs
+    split_docs = splitter.split_documents(docs)
 
-# === Interface ===
-def ask_forum_agent(query: str):
-    result = qa(query)
-    answer = result["result"]
-    source = result["source_documents"][0].metadata
-    print("\n🧠 Answer:\n", answer)
-    print("\n📚 Source Info:")
-    print(f"Product: {source.get('product')}")
-    print(f"URL: {source.get('url')}")
-    print(f"Topic ID: {source.get('topic_id')}")
+    # Embed and store in FAISS (in-memory)
+    vectorstore = FAISS.from_documents(split_docs, embeddings)
+    retriever = vectorstore.as_retriever()
 
-# === Optional: Run interactively ===
-if __name__ == "__main__":
-    while True:
-        user_query = input("\nAsk a question about Bottlehead (or 'exit'): ")
-        if user_query.strip().lower() in {"exit", "quit"}:
-            break
-        ask_forum_agent(user_query)
+    # Build retrieval QA chain
+    return RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
 
-# === Agent function with optional product filter ===
-def ask_forum_agent(query: str, product: str = None):
-    # Optionally filter documents by product
+def ask_forum_agent(query, product=None):
+    """Run a query with optional product filtering."""
+
+    # Optional metadata filtering
     if product:
-        matching_docs = [doc for doc in qa_docs if doc.metadata.get("product", "").lower() == product.lower()]
-        split_docs = splitter.split_documents(matching_docs)
-    else:
-        split_docs = chunked_docs
+        def filter_by_product(doc):
+            return doc.metadata.get("product", "").lower() == product.lower()
+        retriever = forum_agent.retriever
+        retriever.search_kwargs["filter"] = filter_by_product
 
-    # Rebuild retriever from filtered docs
-    local_db = FAISS.from_documents(split_docs, embeddings)
-    local_retriever = local_db.as_retriever()
-
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=ChatOpenAI(api_key=openai_api_key, temperature=0),
-        retriever=local_retriever,
-        return_source_documents=True
-    )
-
-    result = qa_chain(query)
-    answer = result["result"]
-    source = result["source_documents"][0].metadata
-    return {
-        "answer": answer,
-        "product": source.get("product", "Unknown"),
-        "url": source.get("url", "N/A"),
-        "topic_id": source.get("topic_id")
-    }
-
-    if not split_docs:
-        return {
-            "answer": "No matching forum entries found for this product.",
-            "product": product or "All",
-            "url": "N/A",
-            "topic_id": "N/A"
-        }
-
-# === Optional: Terminal interface ===
-if __name__ == "__main__":
-    while True:
-        user_query = input("\nAsk a question (or 'exit'): ")
-        if user_query.strip().lower() in {"exit", "quit"}:
-            break
-        product = input("Filter by product (or press Enter to search all): ").strip()
-        response = ask_forum_agent(user_query, product if product else None)
-
-        print("\n🧠 Answer:\n", response["answer"])
-        print("\n📚 Source Info:")
-        print(f"Product: {response['product']}")
-        print(f"URL: {response['url']}")
+    # Query agent
+    response = forum_agent.run(query)
+    return response
