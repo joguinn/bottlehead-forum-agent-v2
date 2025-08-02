@@ -28,14 +28,6 @@ if df.empty or "question" not in df.columns or "answer" not in df.columns:
     st.error("CSV must contain at least 'question' and 'answer' columns.")
     st.stop()
 
-# Build agent
-with st.spinner("🔧 Building the forum agent..."):
-    try:
-        forum_agent = build_forum_agent(df)
-    except Exception as e:
-        st.error(f"❌ Error building agent: {e}")
-        st.stop()
-
 # Product filter (if product column is present)
 product_filter = None
 if "product" in df.columns:
